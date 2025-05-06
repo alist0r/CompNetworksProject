@@ -2,6 +2,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 public class Main {
 	private static final int port = 12421;
@@ -38,6 +39,20 @@ public class Main {
 				System.out.println("Fetched " + content.length + " bytes from https://" + S + "/");
 			} else {
 				System.out.println("Failed to fetch content!");
+			}
+			
+			int offset = 0;
+			while (offset < content.length) {
+				int chunkSize = Math.min(V,  content.length - offset);
+				byte[] chunk = Arrays.copyOfRange(
+						content, offset, offset + chunkSize
+				);
+				
+				DatagramPacket sendPacket = new DatagramPacket(chunk, chunkSize, packet.getAddress(), packet.getPort());
+				
+				socket.send(sendPacket);
+				offset += chunkSize;
+						
 			}
 			
 			
