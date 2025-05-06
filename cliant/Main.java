@@ -1,33 +1,57 @@
+package com.example.demo;
+
 import java.net.*;
+import java.nio.ByteBuffer;
+import java.util.*;
 
-public class Main {
-	public static void main(String[] args) {
-		DatagramSocket socket = null;
-		try {
-			socket = new DatagramSocket();
-		} catch (SocketException e) {
-			e.printStackTrace();
-		}
+public class YourGroupNameClient {
+    private static final int PORT = 12421;
+    private static final int HEADER = 8;
 
-		byte[] buffer = new byte[512];
-		for (int i = 0; i < 512; ++i) {
-			buffer[i] = (byte)(i % 256);
-		}
+    public static void main(String[] args) throws Exception {
+        Scanner sc = new Scanner(System.in);
+        System.out.print("Enter domain suffix (e.g. umd.edu): ");
+        String suffix = sc.next();
+        System.out.print("Enter desired packet size (<1400): ");
+        int V = sc.nextInt();
+        if (V >= 1400 || V < HEADER + 1) throw new IllegalArgumentException("Bad V");
 
-		InetAddress address = null;
-		try {
-			address = InetAddress.getByName("127.0.0.1");
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+        try (DatagramSocket sock = new DatagramSocket()) {
+            sock.setSoTimeout(10000);                       // 10 s per receive
 
-		DatagramPacket packet = new DatagramPacket(buffer, buffer.length, address, 12421);
-		try {
-			socket.send(packet);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		socket.close();
-	}
+            /* 1. send handshake: "suffix V" */
+            String hello = suffix + " " + V;
+            byte[] helloBytes = hello.getBytes();
+            DatagramPacket helloPkt = new DatagramPacket(
+                    helloBytes, helloBytes.length,
+                    InetAddress.getByName("127.0.0.1"), PORT);
+            sock.send(helloPkt);
+
+            /* 2. receive all data packets */
+            Map<Integer, byte[]> chunks = new HashMap<>();
+            int expectedPkts = -1;          // unknown until first packet
+            int outOfOrder = 0;
+
+            while (expectedPkts == -1 || chunks.size() < expectedPkts) {
+                byte[] buf = new byte[V];
+                DatagramPacket pkt = new DatagramPacket(buf, buf.length);
+                sock.receive(pkt);
+
+                ByteBuffer bb = ByteBuffer.wrap(buf, 0, pkt.getLength());
+                int seq   = bb.getInt();
+                int total = bb.getInt();
+                byte[] pay = Arrays.copyOfRange(buf, HEADER, pkt.getLength());
+
+                if (expectedPkts == -1) expectedPkts = total;
+                if (seq != chunks.size()) outOfOrder++;
+                chunks.put(seq, pay);
+            }
+
+            /* 3. print payloads in order */
+            for (int i = 0; i < expectedPkts; i++) {
+                System.out.print(new String(chunks.get(i)));
+            }
+            System.out.println("\nNumber of out-of-order packets: " + outOfOrder);
+        }
+    }
 }
-
